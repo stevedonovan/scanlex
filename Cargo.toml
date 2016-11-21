@@ -1,0 +1,6 @@
+[package]
+name = "scanlex"
+version = "0.1.0"
+authors = ["steve donovan <steve.j.donovan@gmail.com>"]
+
+[dependencies]
