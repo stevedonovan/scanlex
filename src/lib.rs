@@ -1,10 +1,42 @@
 //! `scanlex` implements a simple _lexical scanner_.
 //!
 //! Tokens are returned by repeatedly calling the `get` method,
-//! (which will return `false` if no tokens are left)
+//! (which will return `Token::End` if no tokens are left)
 //! or by iterating over the scanner.
+//!
+//! They represent numbers (stored as f64), characters, identifiers,
+//! or single or double quoted strings. There is also `Token::Error` to
+//! indicate a badly formed token.  This lexical scanner makes some
+//! sensible assumptions, such as a number may not be directly followed
+//! by a letter, etc. No attempt is made in this version to decode C-style
+//! escape codes in strings.  All whitespace is ignored.
+//!
+//! ## Examples
+//!
+//! ```
+//! use  scanlex::{Scanner,Token};
+//! 
+//! let mut scan = Scanner::new("iden 'string' * 10");
+//! assert_eq!(scan.get(),Token::Iden("iden".to_string()));
+//! assert_eq!(scan.get(),Token::Str("string".to_string()));
+//! assert_eq!(scan.get(),Token::Char('*'));
+//! assert_eq!(scan.get(),Token::Num(10.0));
+//! assert_eq!(scan.get(),Token::End);
+//! ```
+//! 
+//! The scanner struct implements iterator, so:
+//!
+//! ```
+//! let v: Vec<_> = scanlex::Scanner::new("bonzo 42 dog (cat)")
+//! 	.filter_map(|t| t.as_iden()).collect();
+//! assert_eq!(v,&["bonzo","dog","cat"]);
+//! ```
+
 use std::str::FromStr;
 use std::error::Error;
+use std::fmt;
+use std::fmt::Display;
+use std::io;
 
 macro_rules! try_scan {
     ( $($v:ident : $value:expr),+ ) => (
@@ -14,26 +46,92 @@ macro_rules! try_scan {
     );
 }
 
+/// a scanner error type
+#[derive(Debug)]
+#[derive(PartialEq)]
+pub struct ScanError {
+	details: String
+}
+
+impl Display for ScanError {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f,"{}",self.details)
+	}
+}
+
+impl ScanError {
+	/// create a new error
+	pub fn new(msg: &str) -> ScanError { ScanError{details: msg.to_string()} }
+}
+
+impl Error for ScanError {
+	fn description(&self) -> &str {
+		&self.details
+	}
+}
+
+impl From<io::Error> for ScanError {
+	fn from(err: io::Error) -> ScanError {
+		ScanError::new(err.description())
+	}
+}
+
+/// Represents a token returned by `Scanner::get`
 #[derive(Debug)]
 #[derive(PartialEq)]
 pub enum Token {
+  /// a number, stored as double-precision float
   Num(f64),
+  /// a quoted string
   Str(String),
+  /// an identifier \a+[\a\d_]*
   Iden(String),
+  /// a character (anything not recognized as any of the above
   Char(char),
+  /// represents an error
   Error(String),
+  /// end of stream
   End
 }
 
 impl Token {
+	/// is this the end token?
     pub fn finished(&self) -> bool {
         match *self {
             Token::End => true,
             _ => false
         }
     }
+    
+    /// extract the number
+    pub fn as_number(self) -> Option<f64> {
+		match self { Token::Num(n) => Some(n), _ => None }
+	}
+	
+	/// extract the string
+    pub fn as_string(self) -> Option<String> {
+		match self { Token::Str(s) => Some(s), _ => None }
+	}
+	
+	/// extract the identifier
+    pub fn as_iden(self) -> Option<String> {
+		match self { Token::Iden(n) => Some(n), _ => None }
+	}
+	
+	/// extract the character
+    pub fn as_char(self) -> Option<char> {
+		match self { Token::Char(n) => Some(n), _ => None }
+	}
+	
+	/// extract the error
+    pub fn as_error(self) -> Option<ScanError> {
+		match self { Token::Error(n) => Some(ScanError::new(&n)), _ => None }
+	}
+	
+	
 }
 
+/// a struct for lexical scanning of a string
 pub struct Scanner <'a> {
     iter: ::std::str::Chars<'a>,
     ch: char,
@@ -73,8 +171,8 @@ impl<'a> Scanner<'a> {
         Scanner { iter: iter, ch: match mch {Some(c) => c, None => '\0'}, lineno: 1 }
     }
     
-    pub fn expect_message(&self, t: &Token, msg: &str) -> String {
-        format!("line {}: {} expected, got {:?}",self.lineno,msg,t)        
+    fn expect_message(&self, t: &Token, msg: &str) -> ScanError {
+        ScanError::new(&format!("line {}: {} expected, got {:?}",self.lineno,msg,t))        
     }
     
     fn error_msg(&self, msg: &str) -> String {
@@ -195,6 +293,10 @@ impl<'a> Scanner<'a> {
     }
     
     /// collect chars matching the condition, returning a string
+    /// ```
+    /// let mut scan = scanlex::Scanner::new("hello + goodbye");
+    /// assert_eq!(scan.grab_while(|c| c != '+'), "hello ");
+    /// ```    
     pub fn grab_while<F>(&mut self, pred: F ) -> String
      where F: Fn(char) -> bool {
         let mut s = String::new();
@@ -210,7 +312,7 @@ impl<'a> Scanner<'a> {
             if ! pred(c) { self.ch = c; return; }
             s.push(c);
         }
-        self.ch = '\0';        
+        self.ch = '\0';
     }
     
     fn take_digits_into(&mut self, s: &mut String) {
@@ -218,6 +320,12 @@ impl<'a> Scanner<'a> {
     }
     
     /// skip chars while the condition is false
+    ///
+    /// ```
+    /// let mut scan = scanlex::Scanner::new("hello and\nwelcome");
+    /// scan.skip_until(|c| c == '\n');
+    /// assert_eq!(scan.get_iden().unwrap(),"welcome");
+    /// ```
     pub fn skip_until<F>(&mut self, pred: F ) -> bool
      where F: Fn(char) -> bool {
         while let Some(c) = self.iter.next() {
@@ -227,7 +335,15 @@ impl<'a> Scanner<'a> {
         false
     }
     
-    /// collect the rest of the chars in the iterator
+    /// collect the rest of the chars
+    ///
+    /// ```
+    /// use scanlex::{Scanner,Token};
+    ///
+    /// let mut scan = Scanner::new("42 the answer");
+    /// assert_eq!(scan.get(),Token::Num(42.0));
+    /// assert_eq!(scan.take_rest()," the answer");
+    /// ```    
     pub fn take_rest(&mut self) -> String {
         self.grab_while(|c| c != '\0')
     }
@@ -238,7 +354,7 @@ impl<'a> Scanner<'a> {
     }
     
     /// get a String token, failing otherwise
-    pub fn get_string(&mut self) -> Result<String,String> {
+    pub fn get_string(&mut self) -> Result<String,ScanError> {
         let t = self.get();
 		if let Token::Str(s) = t {
 			Ok(s)
@@ -248,17 +364,28 @@ impl<'a> Scanner<'a> {
 	}
     
     /// get an Identifier token, failing otherwise
-    pub fn get_iden(&mut self) -> Result<String,String> {
+    ///
+    /// ```
+    /// let mut scan = scanlex::Scanner::new("hello dolly");
+    /// assert_eq!(scan.get_iden().unwrap(),"hello");
+    /// ```
+    pub fn get_iden(&mut self) -> Result<String,ScanError> {
         let t = self.get();
 		if let Token::Iden(s) = t {
 			Ok(s)
 		} else {
 			Err(self.expect_message(&t,"identifier"))
 		}		
-	}
+	}	
 	
     /// get a float, failing otherwise
-    pub fn get_number(&mut self) -> Result<f64,String> {
+    ///
+    /// ```
+    /// let mut scan = scanlex::Scanner::new("(42)");
+    /// scan.get(); // skip '('
+    /// assert_eq!(scan.get_number().unwrap(),42.0);
+    /// ```    
+    pub fn get_number(&mut self) -> Result<f64,ScanError> {
         let t = self.get();
 		if let Token::Num(x) = t {
 			Ok(x)
@@ -267,8 +394,8 @@ impl<'a> Scanner<'a> {
 		}		
 	}
 	
-    /// get a float, failing otherwise
-    pub fn get_char(&mut self) -> Result<char,String> {
+    /// get a character, failing otherwise
+    pub fn get_char(&mut self) -> Result<char,ScanError> {
         let t = self.get();
 		if let Token::Char(x) = t {
 			Ok(x)
@@ -279,7 +406,7 @@ impl<'a> Scanner<'a> {
 	
     
     /// get an integer, failing otherwise
-    pub fn get_integer(&mut self) -> Result<i32,String> {
+    pub fn get_integer(&mut self) -> Result<i32,ScanError> {
         let res = self.get_number();
         if let Err(e) = res { return Err(e); }
         let v = res.unwrap();
@@ -288,20 +415,71 @@ impl<'a> Scanner<'a> {
         
     
     /// get a Character token that must be one of the given chars
-    pub fn get_ch_matching(&mut self, chars: &[char]) -> Result<char,String> {
+    pub fn get_ch_matching(&mut self, chars: &[char]) -> Result<char,ScanError> {
         let t = self.get();
 		if let Token::Char(c) = t { 
 			if chars.contains(&c) {
 				Ok(c)
 			} else {
                 let s =  expecting_chars(chars);
-				Err(format!("expected one of {}, got {}",s,c))
+				Err(ScanError::new(&format!("expected one of {}, got {}",s,c)))
 			}
 		} else {
 			Err(self.expect_message(&t,"char"))
 		}		
 	}
+	
+	/// skip each character in the string.
+	pub fn skip_chars(&mut self, chars: &str) -> Result<(),ScanError> {
+		for ch in chars.chars() {
+			let c = try!(self.get_char());
+			if c != ch {
+				return Err(ScanError::new(&format!("expected '{}' got '{}'",ch,c)));
+			}
+		}
+		Ok(())
+	}
    
+}
+
+use std::io::prelude::*;
+
+/// used to generate Scanner structs for each line
+pub struct ScanLines<R: Read> {
+    rdr: io::BufReader<R>,
+    line: String
+}
+
+impl <'a, R: Read> ScanLines<R> {
+    
+    /// create a Scanner 'iterator' over all lines from a readable.
+    /// This cannot be a proper `Iterator` because the lifetime constraint
+    /// on `Scanner` cannot be satisfied. You need to use the explicit form:
+    ///
+    /// ```rust,ignore
+	/// let mut iter = ScanLines::new(&f);
+	/// while let Some(mut s) = iter.next() {
+	/// 	println!("{:?}",s.get());
+	/// }
+	/// ```
+    pub fn new(f: R) -> ScanLines<R> {
+        ScanLines {
+            rdr: io::BufReader::new(f),
+            line: String::new()
+        }
+    }
+    
+
+	/// call this to return a `Scanner` for the next line in the source.
+    pub fn next(&'a mut self) -> Option<Scanner<'a>> {
+        self.line.clear();
+        let nbytes = self.rdr.read_line(&mut self.line).unwrap();
+        if nbytes == 0 {
+            return None;
+        }
+        Some(Scanner::new(&self.line))
+    }        
+    
 }
 
 
@@ -329,7 +507,7 @@ mod tests {
 		assert_eq!(scan.get_ch_matching(&['*']).unwrap(),'*');
 		assert_eq!(
 			scan.get_ch_matching(&[',',':']).err().unwrap(),
-			"expected one of ',',':', got /"
+			ScanError::new("expected one of ',',':', got /")
 		);
 		assert_eq!(scan.get(),Num(-10.0));
 		assert_eq!(scan.get(),Error("line 1: bad number: letter follows".to_string()));
@@ -340,14 +518,14 @@ mod tests {
 		assert_eq!(scan.get(),Str("yay".to_string()));
 	}
 	
-	fn try_scan_err() -> Result<(),String> {
+	fn try_scan_err() -> Result<(),ScanError> {
 		let mut scan = Scanner::new("hello: 42");
 		try_scan!{
 			s: scan.get_iden(),
 			ch: scan.get_char(),
 			n: scan.get_integer()
 		};
-		assert_eq!(s,"hello".to_string());
+		assert_eq!(s,"hello");
 		assert_eq!(ch,':');
 		assert_eq!(n,42);     
 		Ok(())
@@ -356,6 +534,25 @@ mod tests {
 	#[test]	
 	fn try_scan_test() {		
 		let _ = try_scan_err();
+	}
+	
+	fn try_skip_chars(test: &str) -> Result<(),ScanError> {
+		let mut scan = Scanner::new(test);
+		try_scan! {
+			__: scan.skip_chars("("),
+			name: scan.get_iden(),
+			__: scan.skip_chars(")="),
+			num: scan.get_integer()			
+		};
+		assert_eq!(name,"hello");
+		assert_eq!(num,42);
+		Ok(())
+	}
+	
+	#[test]
+	fn skip_chars() {
+		let _ = try_skip_chars("(hello)=42");
+		let _ = try_skip_chars(" ( hello ) =  42  ");
 	}
 	
 	

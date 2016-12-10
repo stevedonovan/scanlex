@@ -1,5 +1,5 @@
 extern crate scanlex;
-use scanlex::{Scanner,Token};
+use scanlex::{Scanner,Token,ScanError};
 
 use std::collections::HashMap;
 
@@ -17,18 +17,18 @@ pub enum Value {
    Null
 }
 
-fn scan_json(scan: &mut Scanner) -> Result<Value,String> {
+fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
     use Value::*;
     match scan.get() {
     Token::Str(s) => Ok(Str(s)),
     Token::Num(x) => Ok(Num(x)),
-    Token::End => Err("unexpected end of input".to_string()),
-    Token::Error(e) => Err(e),
+    Token::End => Err(ScanError::new("unexpected end of input")),
+    Token::Error(e) => Err(ScanError::new(&e)),
     Token::Iden(s) =>
         if s == "null"    {Ok(Null)}
         else if s == "true" {Ok(Bool(true))}
         else if s == "false" {Ok(Bool(false))}
-        else {Err(format!("unknown identifier '{}' at line {}",s,scan.lineno))},
+        else {Err(ScanError::new(&format!("unknown identifier '{}' at line {}",s,scan.lineno)))},
     Token::Char(c) =>
         if c == '[' {
             let mut ja = Vec::new();
@@ -52,7 +52,7 @@ fn scan_json(scan: &mut Scanner) -> Result<Value,String> {
             }
             Ok(Obj(jo))
         } else {
-            Err(format!("bad char '{}'",c))
+            Err(ScanError::new(&format!("bad char '{}'",c)))
         }
     }    
 }
