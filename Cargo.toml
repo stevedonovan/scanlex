@@ -1,11 +1,10 @@
 [package]
 name = "scanlex"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["steve donovan <steve.j.donovan@gmail.com>"]
 
 description = "a simple lexical scanner for parsing text into tokens"
 
-documentation = "https://docs.rs/scanlex/0.1.0/scanlex/"
 repository = "https://github.com/stevedonovan/scanlex.git"
 
 readme = "readme.md"

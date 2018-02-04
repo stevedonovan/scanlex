@@ -54,31 +54,35 @@ fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
         } else {
             Err(ScanError::new(&format!("bad char '{}'",c)))
         }
-    }    
+    }
 }
 
-fn parse_json(txt: &str) -> String {
+fn parse_json(txt: &str) -> Value {
     let mut scan = Scanner::new(txt);
-    let res = scan_json(&mut scan).expect("bad json");
-    format!("{:?}",res)    
+    scan_json(&mut scan).expect("bad json")
 }
+
+use Value::*;
 
 #[test]
 fn array() {
 	let s = parse_json("[10,20]");
-	assert_eq!(&s,"Arr([Num(10), Num(20)])");
+    assert_eq!(s, Arr(vec![Box::new(Num(10.0)),Box::new(Num(20.0))]));
 }
+
 
 #[test]
 fn array2() {
 	let s = parse_json("[null,true]");
-	assert_eq!(&s,"Arr([Null, Bool(true)])");
+    assert_eq!(s, Arr(vec![Box::new(Null),Box::new(Bool(true))]));
 }
 
 #[test]
 fn map() {
 	let s = parse_json("{'bonzo':10}");
-	assert_eq!(&s,"Obj({\"bonzo\": Num(10)})");
+    let mut m = HashMap::new();
+    m.insert("bonzo".to_string(),Box::new(Num(10.0)));
+	assert_eq!(s, Obj(m));
 }
 
 
