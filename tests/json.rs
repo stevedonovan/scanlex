@@ -22,6 +22,7 @@ fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
     match scan.get() {
     Token::Str(s) => Ok(Str(s)),
     Token::Num(x) => Ok(Num(x)),
+    Token::Int(n) => Ok(Num(n as f64)),
     Token::End => Err(ScanError::new("unexpected end of input")),
     Token::Error(e) => Err(ScanError::new(&e)),
     Token::Iden(s) =>
