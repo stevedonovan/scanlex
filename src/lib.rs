@@ -38,23 +38,27 @@ use std::fmt;
 use std::fmt::Display;
 use std::io;
 
+mod int;
+use int::Int;
+
 /// a scanner error type
 #[derive(Debug)]
 #[derive(PartialEq)]
 pub struct ScanError {
-    details: String
+    details: String,
+    lineno: u32,
 }
 
 impl Display for ScanError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"{}",self.details)
+        write!(f,"line {}: {}",self.lineno,self.details)
     }
 }
 
 impl ScanError {
     /// create a new error
     pub fn new(msg: &str) -> ScanError {
-        ScanError{details: msg.into()}
+        ScanError{details: msg.into(), lineno: 1}
     }
 }
 
@@ -85,13 +89,17 @@ pub enum Token {
   /// a character (anything not recognized as any of the above
   Char(char),
   /// represents an error
-  Error(String),
+  Error(ScanError),
   /// end of stream
   End
 }
 
 fn type_error<T>(t: Token, expected: &str) -> Result<T,ScanError> {
-    Err(ScanError{details: format!("{} expected, got {:?}",expected,t)})
+    Err(ScanError{details: format!("{} expected, got {:?}",expected,t), lineno: 1})
+}
+
+fn int_error<T>(msg: &str, tname: &str) -> Result<T,ScanError> {
+    Err(ScanError{details: format!("integer {} for {}",msg,tname), lineno: 1})
 }
 
 impl Token {
@@ -102,7 +110,7 @@ impl Token {
             _ => false
         }
     }
-    
+
     /// is this token a float?
     pub fn is_float(&self) -> bool {
         match *self {
@@ -117,15 +125,15 @@ impl Token {
             Token::Num(n) => Some(n),
             _ => None
         }
-    }    
-   
+    }
+
     /// extract the float, or complain
     pub fn as_float_result(self) -> Result<f64,ScanError> {
         match self {
             Token::Num(n) => Ok(n),
             t => type_error(t,"float")
         }
-    }   
+    }
 
     /// is this token an integer?
     pub fn is_integer(&self) -> bool {
@@ -133,7 +141,7 @@ impl Token {
             Token::Int(_) => true,
             _ => false
         }
-    }    
+    }
 
     /// extract the integer
     pub fn as_integer(self) -> Option<i64> {
@@ -150,15 +158,27 @@ impl Token {
             t => type_error(t,"integer")
         }
     }
-    
+
+    /// extract the integer as a particular subtype
+    pub fn as_int_result<I: Int>(self) -> Result<I::Type,ScanError> {
+        let num = self.as_integer_result()?;
+        if num < I::min_value() {
+            return int_error("underflow",I::name());
+        } else
+        if num > I::max_value() {
+            return int_error("overflow",I::name());
+        }
+        Ok(I::cast(num))
+    }
+
     /// is this token an integer?
     pub fn is_number(&self) -> bool {
-        match *self {            
+        match *self {
             Token::Int(_) | Token::Num(_) => true,
             _ => false
         }
-    }        
-    
+    }
+
     /// extract the number, not caring about float or integer
     pub fn as_number(self) -> Option<f64> {
         match self {
@@ -167,7 +187,7 @@ impl Token {
             _ => None
         }
     }
-    
+
     /// extract the number, not caring about float or integer, or complain
     pub fn as_number_result(self) -> Result<f64,ScanError> {
         match self {
@@ -183,7 +203,7 @@ impl Token {
             Token::Str(_) => true,
             _ => false
         }
-    }   
+    }
 
     /// extract the string
     pub fn as_string(self) -> Option<String> {
@@ -207,7 +227,7 @@ impl Token {
             Token::Iden(_) => true,
             _ => false
         }
-    }    
+    }
 
     /// extract the identifier
     pub fn as_iden(self) -> Option<String> {
@@ -224,15 +244,15 @@ impl Token {
             t => type_error(t,"iden")
         }
     }
-    
+
     /// is this token a character?
     pub fn is_char(&self) -> bool {
         match *self {
             Token::Char(_) => true,
             _ => false
         }
-    }   
-    
+    }
+
     /// extract the character
     pub fn as_char(self) -> Option<char> {
         match self {
@@ -240,27 +260,27 @@ impl Token {
             _ => None
         }
     }
-    
+
     /// extract the character, or complain
     pub fn as_char_result(self) -> Result<char,ScanError> {
         match self {
             Token::Char(c) => Ok(c),
             t => type_error(t,"char")
-        }        
+        }
     }
-    
+
     /// is this token an error?
     pub fn is_error(&self) -> bool {
         match *self {
             Token::Error(_) => true,
             _ => false
         }
-    }  
+    }
 
     /// extract the error
     pub fn as_error(self) -> Option<ScanError> {
         match self {
-            Token::Error(n) => Some(ScanError::new(&n)),
+            Token::Error(e) => Some(e),
             _ => None
         }
     }
@@ -314,25 +334,25 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn error_msg(&self,msg: &str, cause: Option<&Error>) -> String {
-        format!("line {}: {}{}",
-            self.lineno,msg, match cause {
-                Some(c) => format!(": caused by {}",c.description()),
-                None => "".into()
-            }
-        )
-    }
-
     pub fn scan_error(&self, msg: &str, cause: Option<&Error>) -> ScanError {
-       ScanError::new(&self.error_msg(msg,cause))
+       ScanError{
+           details: format!("{}{}", msg,
+                match cause {
+                    Some(c) => format!(": caused by {}",c.description()),
+                    None => "".into()
+                }
+            ),
+            lineno: self.lineno
+        }
     }
 
-    fn expect_message(&self, t: &Token, msg: &str) -> ScanError {
-       self.scan_error(&format!("{} expected, got {:?}",msg,t),None)
+    fn update_lineno(&self, mut err: ScanError) -> ScanError {
+        err.lineno = self.lineno;
+        err
     }
 
     fn token_error(&self, msg: &str, cause: Option<&Error>) -> Token {
-        Token::Error(self.error_msg(msg,cause))
+        Token::Error(self.scan_error(msg,cause))
     }
 
     /// skip any whitespace characters - return false if we're at the end.
@@ -506,7 +526,7 @@ impl<'a> Scanner<'a> {
     /// assert_eq!(scan.get_iden().unwrap(),"welcome");
     /// ```
     pub fn skip_until<F>(&mut self, pred: F ) -> bool
-     where F: Fn(char) -> bool {
+    where F: Fn(char) -> bool {
         while let Some(c) = self.iter.next() {
             if pred(c) { self.ch = c; return true; }
         }
@@ -534,12 +554,7 @@ impl<'a> Scanner<'a> {
 
     /// get a String token, failing otherwise
     pub fn get_string(&mut self) -> Result<String,ScanError> {
-        let t = self.get();
-        if let Token::Str(s) = t {
-            Ok(s)
-        } else {
-            Err(self.expect_message(&t,"string"))
-        }
+        self.get().as_string_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get an Identifier token, failing otherwise
@@ -549,12 +564,7 @@ impl<'a> Scanner<'a> {
     /// assert_eq!(scan.get_iden().unwrap(),"hello");
     /// ```
     pub fn get_iden(&mut self) -> Result<String,ScanError> {
-        let t = self.get();
-        if let Token::Iden(s) = t {
-            Ok(s)
-        } else {
-            Err(self.expect_message(&t,"identifier"))
-        }
+        self.get().as_iden_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get a number, failing otherwise
@@ -565,59 +575,37 @@ impl<'a> Scanner<'a> {
     /// assert_eq!(scan.get_number().unwrap(),42.0);
     /// ```
     pub fn get_number(&mut self) -> Result<f64,ScanError> {
-        let t = self.get();
-        if let Token::Num(x) = t {
-            Ok(x)
-        } else
-        if let Token::Int(n) = t {
-            Ok(n as f64)
-        } else {
-            Err(self.expect_message(&t,"char"))
-        }
+        self.get().as_number_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get an integer, failing otherwise
     pub fn get_integer(&mut self) -> Result<i64,ScanError> {
-        let t = self.get();
-        if let Token::Int(x) = t {
-            Ok(x)
-        } else {
-            Err(self.expect_message(&t,"integer"))
-        }
+        self.get().as_integer_result().map_err(|e| self.update_lineno(e))
+    }
+
+    /// get an integer of a particular type, failing otherwise
+    pub fn get_int<I: Int>(&mut self) -> Result<I::Type,ScanError> {
+        self.get().as_int_result::<I>().map_err(|e| self.update_lineno(e))
     }
 
     /// get an float, failing otherwise
     pub fn get_float(&mut self) -> Result<f64,ScanError> {
-        let t = self.get();
-        if let Token::Num(x) = t {
-            Ok(x)
-        } else {
-            Err(self.expect_message(&t,"float"))
-        }
+        self.get().as_float_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get a character, failing otherwise
     pub fn get_char(&mut self) -> Result<char,ScanError> {
-        let t = self.get();
-        if let Token::Char(x) = t {
-            Ok(x)
-        } else {
-            Err(self.expect_message(&t,"char"))
-        }
+        self.get().as_char_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get a Character token that must be one of the given chars
     pub fn get_ch_matching(&mut self, chars: &[char]) -> Result<char,ScanError> {
-        let t = self.get();
-        if let Token::Char(c) = t {
-            if chars.contains(&c) {
-                Ok(c)
-            } else {
-                let s = expecting_chars(chars);
-                Err(self.scan_error(&format!("expected one of {}, got {}",s,c),None))
-            }
+        let c = self.get_char()?;
+        if chars.contains(&c) {
+            Ok(c)
         } else {
-            Err(self.expect_message(&t,"char"))
+            let s = expecting_chars(chars);
+            Err(self.scan_error(&format!("expected one of {}, got {}",s,c),None))
         }
     }
 
@@ -706,10 +694,10 @@ mod tests {
         assert_eq!(scan.get_ch_matching(&['*']).unwrap(),'*');
         assert_eq!(
             scan.get_ch_matching(&[',',':']).err().unwrap(),
-            ScanError::new("line 1: expected one of ',',':', got /")
+            ScanError::new("expected one of ',',':', got /")
         );
         assert_eq!(scan.get(),Int(-10));
-        assert_eq!(scan.get(),Error("line 1: bad integer: letter follows".to_string()));
+        assert_eq!(scan.get(),Error(ScanError::new("bad integer: letter follows")));
         assert_eq!(scan.get(),Iden("B".to_string()));
         assert_eq!(scan.get(),Num(2000000.0));
         assert_eq!(scan.get(),Int(255));
@@ -758,7 +746,7 @@ mod tests {
         assert_eq!(scan.get_number(),Ok(10.0));
         assert_eq!(scan.get_float(),Ok(10.0));
     }
-    
+
     #[test]
     fn classifying_tokens() {
         let mut s = Scanner::new("10 2.0 'hello' hello?");
@@ -768,16 +756,16 @@ mod tests {
         assert!(s.get().is_float());
         assert!(s.get().is_string());
         assert!(s.get().is_iden());
-        assert!(s.get().is_char());        
+        assert!(s.get().is_char());
     }
-    
+
     #[test]
     fn collecting_tokens_of_type() {
         let s = Scanner::new("if let Some(a) = Bonzo::Dog {}");
         let c: Vec<_> = s.filter_map(|t| t.as_iden()).collect();
         assert_eq!(c,&["if","let","Some","a","Bonzo","Dog"]);
     }
-    
+
     #[test]
     fn collecting_same_tokens_or_error() {
         let s = Scanner::new("10 1.5 20.0 30.1");

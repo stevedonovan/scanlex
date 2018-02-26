@@ -8,7 +8,6 @@ use std::collections::HashMap;
 type JsonArray = Vec<Box<Value>>;
 type JsonObject = HashMap<String,Box<Value>>;
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
    Str(String),
@@ -26,7 +25,7 @@ fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
         Token::Num(x) => Ok(Num(x)),
         Token::Int(n) => Ok(Num(n as f64)),
         Token::End => Err(scan.scan_error("unexpected end of input",None)),
-        Token::Error(e) => Err(scan.scan_error(&e,None)),
+        Token::Error(e) => Err(e),
         Token::Iden(s) =>
             if s == "null"    {Ok(Null)}
             else if s == "true" {Ok(Bool(true))}

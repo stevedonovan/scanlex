@@ -10,10 +10,10 @@ use scanlex::ScanLines;
 use std::fs::File;
 
 fn main() {
-    let f = File::open("scanline.rs").expect("cannot open scanlines.rs");
+    let f = File::open("scanline.rs").expect("cannot open scanline.rs");
     let mut iter = ScanLines::new(&f);
     while let Some(s) = iter.next() {
         let mut s = s.expect("cannot read line");
         println!("{:?}",s.get());
-    }    
+    }
 }
