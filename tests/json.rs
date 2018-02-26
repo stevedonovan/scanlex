@@ -1,3 +1,5 @@
+// A Simple, toy JSON parser.
+// Remember there are Crates for This
 extern crate scanlex;
 use scanlex::{Scanner,Token,ScanError};
 
@@ -20,41 +22,41 @@ pub enum Value {
 fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
     use Value::*;
     match scan.get() {
-    Token::Str(s) => Ok(Str(s)),
-    Token::Num(x) => Ok(Num(x)),
-    Token::Int(n) => Ok(Num(n as f64)),
-    Token::End => Err(ScanError::new("unexpected end of input")),
-    Token::Error(e) => Err(ScanError::new(&e)),
-    Token::Iden(s) =>
-        if s == "null"    {Ok(Null)}
-        else if s == "true" {Ok(Bool(true))}
-        else if s == "false" {Ok(Bool(false))}
-        else {Err(ScanError::new(&format!("unknown identifier '{}' at line {}",s,scan.lineno)))},
-    Token::Char(c) =>
-        if c == '[' {
-            let mut ja = Vec::new();
-            let mut ch = c;
-            while ch != ']' {
-                let o = try!(scan_json(scan));
-                ch = try!(scan.get_ch_matching(&[',',']']));
-                ja.push(Box::new(o));
+        Token::Str(s) => Ok(Str(s)),
+        Token::Num(x) => Ok(Num(x)),
+        Token::Int(n) => Ok(Num(n as f64)),
+        Token::End => Err(scan.scan_error("unexpected end of input",None)),
+        Token::Error(e) => Err(scan.scan_error(&e,None)),
+        Token::Iden(s) =>
+            if s == "null"    {Ok(Null)}
+            else if s == "true" {Ok(Bool(true))}
+            else if s == "false" {Ok(Bool(false))}
+            else {Err(scan.scan_error(&format!("unknown identifier '{}'",s),None))},
+        Token::Char(c) =>
+            if c == '[' {
+                let mut ja = Vec::new();
+                let mut ch = c;
+                while ch != ']' {
+                    let o = scan_json(scan)?;
+                    ch = scan.get_ch_matching(&[',',']'])?;
+                    ja.push(Box::new(o));
+                }
+                Ok(Arr(ja))
+            } else
+            if c == '{' {
+                let mut jo = HashMap::new();
+                let mut ch = c;
+                while ch != '}' {
+                    let key = scan.get_string()?;
+                    scan.get_ch_matching(&[':'])?;
+                    let o = scan_json(scan)?;
+                    ch = scan.get_ch_matching(&[',','}'])?;
+                    jo.insert(key,Box::new(o));
+                }
+                Ok(Obj(jo))
+            } else {
+                Err(scan.scan_error(&format!("bad char '{}'",c),None))
             }
-            Ok(Arr(ja))
-        } else
-        if c == '{' {
-            let mut jo = HashMap::new();
-            let mut ch = c;
-            while ch != '}' {
-                let key = try!(scan.get_string());
-                try!(scan.get_ch_matching(&[':']));
-                let o = try!(scan_json(scan));
-                ch = try!(scan.get_ch_matching(&[',','}']));
-                jo.insert(key,Box::new(o));
-            }
-            Ok(Obj(jo))
-        } else {
-            Err(ScanError::new(&format!("bad char '{}'",c)))
-        }
     }
 }
 

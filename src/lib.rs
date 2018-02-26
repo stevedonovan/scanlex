@@ -90,11 +90,23 @@ pub enum Token {
   End
 }
 
+fn type_error<T>(t: Token, expected: &str) -> Result<T,ScanError> {
+    Err(ScanError{details: format!("{} expected, got {:?}",expected,t)})
+}
+
 impl Token {
     /// is this the end token?
     pub fn finished(&self) -> bool {
         match *self {
             Token::End => true,
+            _ => false
+        }
+    }
+    
+    /// is this token a float?
+    pub fn is_float(&self) -> bool {
+        match *self {
+            Token::Num(_) => true,
             _ => false
         }
     }
@@ -105,7 +117,23 @@ impl Token {
             Token::Num(n) => Some(n),
             _ => None
         }
-    }
+    }    
+   
+    /// extract the float, or complain
+    pub fn as_float_result(self) -> Result<f64,ScanError> {
+        match self {
+            Token::Num(n) => Ok(n),
+            t => type_error(t,"float")
+        }
+    }   
+
+    /// is this token an integer?
+    pub fn is_integer(&self) -> bool {
+        match *self {
+            Token::Int(_) => true,
+            _ => false
+        }
+    }    
 
     /// extract the integer
     pub fn as_integer(self) -> Option<i64> {
@@ -115,6 +143,22 @@ impl Token {
         }
     }
 
+    /// extract the integer, or complain
+    pub fn as_integer_result(self) -> Result<i64,ScanError> {
+        match self {
+            Token::Int(n) => Ok(n),
+            t => type_error(t,"integer")
+        }
+    }
+    
+    /// is this token an integer?
+    pub fn is_number(&self) -> bool {
+        match *self {            
+            Token::Int(_) | Token::Num(_) => true,
+            _ => false
+        }
+    }        
+    
     /// extract the number, not caring about float or integer
     pub fn as_number(self) -> Option<f64> {
         match self {
@@ -123,6 +167,23 @@ impl Token {
             _ => None
         }
     }
+    
+    /// extract the number, not caring about float or integer, or complain
+    pub fn as_number_result(self) -> Result<f64,ScanError> {
+        match self {
+            Token::Num(n) => Ok(n),
+            Token::Int(n) => Ok(n as f64),
+            t => type_error(t,"number")
+        }
+    }
+
+    /// is this token a string?
+    pub fn is_string(&self) -> bool {
+        match *self {
+            Token::Str(_) => true,
+            _ => false
+        }
+    }   
 
     /// extract the string
     pub fn as_string(self) -> Option<String> {
@@ -132,6 +193,22 @@ impl Token {
         }
     }
 
+    /// extract the string, or complain
+    pub fn as_string_result(self) -> Result<String,ScanError> {
+        match self {
+            Token::Str(s) => Ok(s),
+            t => type_error(t,"string")
+        }
+    }
+
+    /// is this token an identifier?
+    pub fn is_iden(&self) -> bool {
+        match *self {
+            Token::Iden(_) => true,
+            _ => false
+        }
+    }    
+
     /// extract the identifier
     pub fn as_iden(self) -> Option<String> {
         match self {
@@ -140,13 +217,45 @@ impl Token {
         }
     }
 
+    /// extract the identifier, or complain
+    pub fn as_iden_result(self) -> Result<String,ScanError> {
+        match self {
+            Token::Iden(n) => Ok(n),
+            t => type_error(t,"iden")
+        }
+    }
+    
+    /// is this token a character?
+    pub fn is_char(&self) -> bool {
+        match *self {
+            Token::Char(_) => true,
+            _ => false
+        }
+    }   
+    
     /// extract the character
     pub fn as_char(self) -> Option<char> {
         match self {
-            Token::Char(n) => Some(n),
+            Token::Char(c) => Some(c),
             _ => None
         }
     }
+    
+    /// extract the character, or complain
+    pub fn as_char_result(self) -> Result<char,ScanError> {
+        match self {
+            Token::Char(c) => Ok(c),
+            t => type_error(t,"char")
+        }        
+    }
+    
+    /// is this token an error?
+    pub fn is_error(&self) -> bool {
+        match *self {
+            Token::Error(_) => true,
+            _ => false
+        }
+    }  
 
     /// extract the error
     pub fn as_error(self) -> Option<ScanError> {
@@ -205,16 +314,16 @@ impl<'a> Scanner<'a> {
         }
     }
 
-    fn error_msg(&self,msg: &str, cause: Option<&str>) -> String {
+    fn error_msg(&self,msg: &str, cause: Option<&Error>) -> String {
         format!("line {}: {}{}",
             self.lineno,msg, match cause {
-                Some(c) => format!(": caused by {}",c),
+                Some(c) => format!(": caused by {}",c.description()),
                 None => "".into()
             }
         )
     }
 
-    fn scan_error(&self, msg: &str, cause: Option<&str>) -> ScanError {
+    pub fn scan_error(&self, msg: &str, cause: Option<&Error>) -> ScanError {
        ScanError::new(&self.error_msg(msg,cause))
     }
 
@@ -222,7 +331,7 @@ impl<'a> Scanner<'a> {
        self.scan_error(&format!("{} expected, got {:?}",msg,t),None)
     }
 
-    fn token_error(&self, msg: &str, cause: Option<&str>) -> Token {
+    fn token_error(&self, msg: &str, cause: Option<&Error>) -> Token {
         Token::Error(self.error_msg(msg,cause))
     }
 
@@ -306,7 +415,7 @@ impl<'a> Scanner<'a> {
                 self.take_while_into(&mut s,|c| c.is_digit(16));
                 return match i64::from_str_radix(&s,16) {
                     Ok(n) => Int(n),
-                    Err(e) => self.token_error("bad hex constant",Some(e.description()))
+                    Err(e) => self.token_error("bad hex constant",Some(&e))
                 }
             }
 
@@ -331,7 +440,7 @@ impl<'a> Scanner<'a> {
                 }
                 return match f64::from_str(&s) {
                     Ok(x) => Num(x),
-                    Err(e) => self.token_error("bad floating-point number",Some(e.description()))
+                    Err(e) => self.token_error("bad floating-point number",Some(&e))
                 }
             } else {
                 if self.ch.is_alphabetic() {
@@ -339,7 +448,7 @@ impl<'a> Scanner<'a> {
                 }
                 return match i64::from_str(&s) {
                     Ok(x) => Int(x),
-                    Err(e) => self.token_error("bad integer",Some(e.description()))
+                    Err(e) => self.token_error("bad integer",Some(&e))
                 }
             }
 
@@ -648,6 +757,32 @@ mod tests {
         assert_eq!(scan.get_number(),Ok(0.0));
         assert_eq!(scan.get_number(),Ok(10.0));
         assert_eq!(scan.get_float(),Ok(10.0));
+    }
+    
+    #[test]
+    fn classifying_tokens() {
+        let mut s = Scanner::new("10 2.0 'hello' hello?");
+        let t = s.get();
+        assert!(t.is_integer());
+        assert!(t.is_number());
+        assert!(s.get().is_float());
+        assert!(s.get().is_string());
+        assert!(s.get().is_iden());
+        assert!(s.get().is_char());        
+    }
+    
+    #[test]
+    fn collecting_tokens_of_type() {
+        let s = Scanner::new("if let Some(a) = Bonzo::Dog {}");
+        let c: Vec<_> = s.filter_map(|t| t.as_iden()).collect();
+        assert_eq!(c,&["if","let","Some","a","Bonzo","Dog"]);
+    }
+    
+    #[test]
+    fn collecting_same_tokens_or_error() {
+        let s = Scanner::new("10 1.5 20.0 30.1");
+        let c: Result<Vec<_>,_> = s.map(|t| t.as_number_result()).collect();
+        assert_eq!(c.unwrap(),&[10.0,1.5,20.0,30.1]);
     }
 
 
