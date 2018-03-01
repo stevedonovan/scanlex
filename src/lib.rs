@@ -292,6 +292,7 @@ pub struct Scanner <'a> {
     iter: ::std::str::Chars<'a>,
     ch: char,
     pub lineno: u32,
+    no_float: bool,
 }
 
 fn expecting_chars(chars: &[char]) -> String {
@@ -331,7 +332,13 @@ impl<'a> Scanner<'a> {
             iter: iter,
             ch: match mch {Some(c) => c, None => '\0'},
             lineno: lineno,
+            no_float: false
         }
+    }
+    
+    pub fn no_float(mut self) -> Scanner<'a> {
+        self.no_float = true;
+        self
     }
 
     pub fn scan_error(&self, msg: &str, cause: Option<&Error>) -> ScanError {
@@ -423,6 +430,7 @@ impl<'a> Scanner<'a> {
                     maybe_hex = self.ch == 'X' || self.ch == 'x';
                     if ! maybe_hex {
                         s.push('0');
+                        if ! self.is_digit() && self.ch != '.' { self.ch = '\0'; }
                     }
                 } else
                 if ! self.is_digit() { // false alarm, wuz just a char...
@@ -445,7 +453,7 @@ impl<'a> Scanner<'a> {
 
             // floating point part?
 
-            if self.ch == '.'  || self.ch == 'e' || self.ch == 'E' {
+            if ! self.no_float && (self.ch == '.'  || self.ch == 'e' || self.ch == 'E') {
                 if self.ch == '.' {
                     self.take_digits_into(&mut s);
                 }
@@ -460,18 +468,18 @@ impl<'a> Scanner<'a> {
                 }
                 return match f64::from_str(&s) {
                     Ok(x) => Num(x),
-                    Err(e) => self.token_error("bad floating-point number",Some(&e))
+                    Err(e) => self.token_error(&format!("bad floating-point number {:?}",s),Some(&e))
                 }
             } else {
-                if self.ch.is_alphabetic() {
+                if ! self.no_float && self.ch.is_alphabetic() {
                     return self.token_error("bad integer: letter follows",None);
                 }
                 return match i64::from_str(&s) {
                     Ok(x) => Int(x),
-                    Err(e) => self.token_error("bad integer",Some(&e))
+                    Err(e) => 
+                        self.token_error(&format!("bad integer {:?}",s),Some(&e))
                 }
             }
-
         } else
         if self.ch == '\'' || self.ch == '\"' {
             let endquote = self.ch;
@@ -740,11 +748,20 @@ mod tests {
 
     #[test]
     fn numbers() {
-        let mut scan = Scanner::new("10 0.0 1.0e1 1e1");
+        let mut scan = Scanner::new("10 0.0 1.0e1 1e1 0 ");
         assert_eq!(scan.get_integer(),Ok(10));
         assert_eq!(scan.get_number(),Ok(0.0));
         assert_eq!(scan.get_number(),Ok(10.0));
         assert_eq!(scan.get_float(),Ok(10.0));
+        assert_eq!(scan.get_integer(),Ok(0));
+    }
+    
+    #[test]
+    fn no_float() {
+        use Token::*;
+        let scan = Scanner::new("0.0 1e4").no_float();
+        let c: Vec<_> = scan.collect();
+        assert_eq!(c,&[Int(0),Char('.'),Int(0),Int(1),Iden("e4".into())]);
     }
 
     #[test]
