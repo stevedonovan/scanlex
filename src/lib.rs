@@ -416,34 +416,36 @@ impl<'a> Scanner<'a> {
         if ! self.skip_whitespace() { return End; }
 
         // a number starts with a digit or a sign
-        let plusminus = self.either_plus_or_minus();
+        let plusminus = if ! self.no_float {self.either_plus_or_minus()} else {None};
         if self.is_digit() || plusminus.is_some() {
             let mut s = String::new();
             if plusminus.is_some() {
                 s.push(plusminus.unwrap());
             }
-            let mut maybe_hex = self.ch == '0';
-            if plusminus.is_some() || maybe_hex {
-                // look ahead! Might be a number or just a char
-                self.nextch();
-                if maybe_hex { // after a '0'?
-                    maybe_hex = self.ch == 'X' || self.ch == 'x';
-                    if ! maybe_hex {
-                        s.push('0');
-                        if ! self.is_digit() && self.ch != '.' { self.ch = '\0'; }
+            if ! self.no_float {
+                let mut maybe_hex = self.ch == '0';
+                if plusminus.is_some() || maybe_hex {
+                    // look ahead! Might be a number or just a char
+                    self.nextch();
+                    if maybe_hex { // after a '0'?
+                        maybe_hex = self.ch == 'X' || self.ch == 'x';
+                        if ! maybe_hex {
+                            s.push('0');
+                            if ! self.is_digit() && self.ch != '.' { self.ch = '\0'; }
+                        }
+                    } else
+                    if ! self.is_digit() { // false alarm, wuz just a char...
+                        return Char(plusminus.unwrap());
                     }
-                } else
-                if ! self.is_digit() { // false alarm, wuz just a char...
-                    return Char(plusminus.unwrap());
                 }
-            }
-            // integer part
-            if maybe_hex { // in hex...
-                self.nextch(); // skip the 'x'
-                self.take_while_into(&mut s,|c| c.is_digit(16));
-                return match i64::from_str_radix(&s,16) {
-                    Ok(n) => Int(n),
-                    Err(e) => self.token_error("bad hex constant",Some(&e))
+                // integer part
+                if maybe_hex { // in hex...
+                    self.nextch(); // skip the 'x'
+                    self.take_while_into(&mut s,|c| c.is_digit(16));
+                    return match i64::from_str_radix(&s,16) {
+                        Ok(n) => Int(n),
+                        Err(e) => self.token_error("bad hex constant",Some(&e))
+                    }
                 }
             }
 
