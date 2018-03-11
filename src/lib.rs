@@ -28,7 +28,7 @@
 //!
 //! ```
 //! let v: Vec<_> = scanlex::Scanner::new("bonzo 42 dog (cat)")
-//!     .filter_map(|t| t.as_iden()).collect();
+//!     .filter_map(|t| t.to_iden()).collect();
 //! assert_eq!(v,&["bonzo","dog","cat"]);
 //! ```
 
@@ -120,7 +120,7 @@ impl Token {
     }
 
     /// extract the float
-    pub fn as_float(self) -> Option<f64> {
+    pub fn to_float(self) -> Option<f64> {
         match self {
             Token::Num(n) => Some(n),
             _ => None
@@ -128,7 +128,7 @@ impl Token {
     }
 
     /// extract the float, or complain
-    pub fn as_float_result(self) -> Result<f64,ScanError> {
+    pub fn to_float_result(self) -> Result<f64,ScanError> {
         match self {
             Token::Num(n) => Ok(n),
             t => type_error(t,"float")
@@ -144,7 +144,7 @@ impl Token {
     }
 
     /// extract the integer
-    pub fn as_integer(self) -> Option<i64> {
+    pub fn to_integer(self) -> Option<i64> {
         match self {
             Token::Int(n) => Some(n),
             _ => None
@@ -152,7 +152,7 @@ impl Token {
     }
 
     /// extract the integer, or complain
-    pub fn as_integer_result(self) -> Result<i64,ScanError> {
+    pub fn to_integer_result(self) -> Result<i64,ScanError> {
         match self {
             Token::Int(n) => Ok(n),
             t => type_error(t,"integer")
@@ -160,8 +160,8 @@ impl Token {
     }
 
     /// extract the integer as a particular subtype
-    pub fn as_int_result<I: Int>(self) -> Result<I::Type,ScanError> {
-        let num = self.as_integer_result()?;
+    pub fn to_int_result<I: Int>(self) -> Result<I::Type,ScanError> {
+        let num = self.to_integer_result()?;
         if num < I::min_value() {
             return int_error("underflow",I::name());
         } else
@@ -180,7 +180,7 @@ impl Token {
     }
 
     /// extract the number, not caring about float or integer
-    pub fn as_number(self) -> Option<f64> {
+    pub fn to_number(self) -> Option<f64> {
         match self {
             Token::Num(n) => Some(n),
             Token::Int(n) => Some(n as f64),
@@ -189,7 +189,7 @@ impl Token {
     }
 
     /// extract the number, not caring about float or integer, or complain
-    pub fn as_number_result(self) -> Result<f64,ScanError> {
+    pub fn to_number_result(self) -> Result<f64,ScanError> {
         match self {
             Token::Num(n) => Ok(n),
             Token::Int(n) => Ok(n as f64),
@@ -206,15 +206,23 @@ impl Token {
     }
 
     /// extract the string
-    pub fn as_string(self) -> Option<String> {
+    pub fn to_string(self) -> Option<String> {
         match self {
             Token::Str(s) => Some(s),
             _ => None
         }
     }
 
+    /// extract a reference the string
+    pub fn as_string(&self) -> Option<&str> {
+        match *self {
+            Token::Str(ref s) => Some(s.as_str()),
+            _ => None
+        }
+    }
+
     /// extract the string, or complain
-    pub fn as_string_result(self) -> Result<String,ScanError> {
+    pub fn to_string_result(self) -> Result<String,ScanError> {
         match self {
             Token::Str(s) => Ok(s),
             t => type_error(t,"string")
@@ -230,15 +238,24 @@ impl Token {
     }
 
     /// extract the identifier
-    pub fn as_iden(self) -> Option<String> {
+    pub fn to_iden(self) -> Option<String> {
         match self {
             Token::Iden(n) => Some(n),
             _ => None
         }
     }
 
+    /// extract a reference to the identifier
+    pub fn as_iden(&self) -> Option<&str> {
+        match *self {
+            Token::Iden(ref n) => Some(n.as_str()),
+            _ => None
+        }
+    }
+
+
     /// extract the identifier, or complain
-    pub fn as_iden_result(self) -> Result<String,ScanError> {
+    pub fn to_iden_result(self) -> Result<String,ScanError> {
         match self {
             Token::Iden(n) => Ok(n),
             t => type_error(t,"iden")
@@ -254,7 +271,7 @@ impl Token {
     }
 
     /// extract the character
-    pub fn as_char(self) -> Option<char> {
+    pub fn to_char(self) -> Option<char> {
         match self {
             Token::Char(c) => Some(c),
             _ => None
@@ -262,7 +279,7 @@ impl Token {
     }
 
     /// extract the character, or complain
-    pub fn as_char_result(self) -> Result<char,ScanError> {
+    pub fn to_char_result(self) -> Result<char,ScanError> {
         match self {
             Token::Char(c) => Ok(c),
             t => type_error(t,"char")
@@ -278,7 +295,7 @@ impl Token {
     }
 
     /// extract the error
-    pub fn as_error(self) -> Option<ScanError> {
+    pub fn to_error(self) -> Option<ScanError> {
         match self {
             Token::Error(e) => Some(e),
             _ => None
@@ -335,7 +352,7 @@ impl<'a> Scanner<'a> {
             no_float: false
         }
     }
-    
+
     pub fn no_float(mut self) -> Scanner<'a> {
         self.no_float = true;
         self
@@ -478,7 +495,7 @@ impl<'a> Scanner<'a> {
                 }
                 return match i64::from_str(&s) {
                     Ok(x) => Int(x),
-                    Err(e) => 
+                    Err(e) =>
                         self.token_error(&format!("bad integer {:?}",s),Some(&e))
                 }
             }
@@ -564,7 +581,7 @@ impl<'a> Scanner<'a> {
 
     /// get a String token, failing otherwise
     pub fn get_string(&mut self) -> Result<String,ScanError> {
-        self.get().as_string_result().map_err(|e| self.update_lineno(e))
+        self.get().to_string_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get an Identifier token, failing otherwise
@@ -574,7 +591,7 @@ impl<'a> Scanner<'a> {
     /// assert_eq!(scan.get_iden().unwrap(),"hello");
     /// ```
     pub fn get_iden(&mut self) -> Result<String,ScanError> {
-        self.get().as_iden_result().map_err(|e| self.update_lineno(e))
+        self.get().to_iden_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get a number, failing otherwise
@@ -585,27 +602,27 @@ impl<'a> Scanner<'a> {
     /// assert_eq!(scan.get_number().unwrap(),42.0);
     /// ```
     pub fn get_number(&mut self) -> Result<f64,ScanError> {
-        self.get().as_number_result().map_err(|e| self.update_lineno(e))
+        self.get().to_number_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get an integer, failing otherwise
     pub fn get_integer(&mut self) -> Result<i64,ScanError> {
-        self.get().as_integer_result().map_err(|e| self.update_lineno(e))
+        self.get().to_integer_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get an integer of a particular type, failing otherwise
     pub fn get_int<I: Int>(&mut self) -> Result<I::Type,ScanError> {
-        self.get().as_int_result::<I>().map_err(|e| self.update_lineno(e))
+        self.get().to_int_result::<I>().map_err(|e| self.update_lineno(e))
     }
 
     /// get an float, failing otherwise
     pub fn get_float(&mut self) -> Result<f64,ScanError> {
-        self.get().as_float_result().map_err(|e| self.update_lineno(e))
+        self.get().to_float_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get a character, failing otherwise
     pub fn get_char(&mut self) -> Result<char,ScanError> {
-        self.get().as_char_result().map_err(|e| self.update_lineno(e))
+        self.get().to_char_result().map_err(|e| self.update_lineno(e))
     }
 
     /// get a Character token that must be one of the given chars
@@ -757,7 +774,7 @@ mod tests {
         assert_eq!(scan.get_float(),Ok(10.0));
         assert_eq!(scan.get_integer(),Ok(0));
     }
-    
+
     #[test]
     fn no_float() {
         use Token::*;
@@ -781,14 +798,14 @@ mod tests {
     #[test]
     fn collecting_tokens_of_type() {
         let s = Scanner::new("if let Some(a) = Bonzo::Dog {}");
-        let c: Vec<_> = s.filter_map(|t| t.as_iden()).collect();
+        let c: Vec<_> = s.filter_map(|t| t.to_iden()).collect();
         assert_eq!(c,&["if","let","Some","a","Bonzo","Dog"]);
     }
 
     #[test]
     fn collecting_same_tokens_or_error() {
         let s = Scanner::new("10 1.5 20.0 30.1");
-        let c: Result<Vec<_>,_> = s.map(|t| t.as_number_result()).collect();
+        let c: Result<Vec<_>,_> = s.map(|t| t.to_number_result()).collect();
         assert_eq!(c.unwrap(),&[10.0,1.5,20.0,30.1]);
     }
 
