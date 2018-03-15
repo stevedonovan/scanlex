@@ -151,4 +151,12 @@ fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
 
 (This is of course an Illustrative Example. JSON is a solved problem.)
 
+## Options
+
+With `no_float` you get a barebones parser that does not recognize floats, 
+just integers, strings, chars and identifiers. This is useful if the 
+existing rules are too strict - e.g "2d" is fine in `no_float` mode, but
+an error in the default mode. [chrono-english](https://github.com/stevedonovan/chrono-english)
+uses this mode to parse date expressions.
+
 
