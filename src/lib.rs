@@ -278,6 +278,14 @@ impl Token {
         }
     }
 
+    /// extract the character
+    pub fn as_char(&self) -> Option<char> {
+        match *self {
+            Token::Char(c) => Some(c),
+            _ => None
+        }
+    }
+
     /// extract the character, or complain
     pub fn to_char_result(self) -> Result<char,ScanError> {
         match self {
