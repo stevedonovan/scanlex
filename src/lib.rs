@@ -17,8 +17,8 @@
 //! use  scanlex::{Scanner,Token};
 //!
 //! let mut scan = Scanner::new("iden 'string' * 10");
-//! assert_eq!(scan.get(),Token::Iden("iden".to_string()));
-//! assert_eq!(scan.get(),Token::Str("string".to_string()));
+//! assert_eq!(scan.get(),Token::Iden("iden".into()));
+//! assert_eq!(scan.get(),Token::Str("string".into()));
 //! assert_eq!(scan.get(),Token::Char('*'));
 //! assert_eq!(scan.get(),Token::Int(10));
 //! assert_eq!(scan.get(),Token::End);
@@ -318,6 +318,7 @@ pub struct Scanner <'a> {
     ch: char,
     pub lineno: u32,
     no_float: bool,
+    line_comment: Option<char>,
 }
 
 fn expecting_chars(chars: &[char]) -> String {
@@ -357,14 +358,25 @@ impl<'a> Scanner<'a> {
             iter: iter,
             ch: match mch {Some(c) => c, None => '\0'},
             lineno: lineno,
-            no_float: false
+            no_float: false,
+            line_comment: None,
         }
     }
 
+    /// this scanner will not recognize floats
+    ///
+    /// "2.5" is tokenized as Int(2),Char('.'),Int(5)
     pub fn no_float(mut self) -> Scanner<'a> {
         self.no_float = true;
         self
     }
+
+    /// ignore everything in a line after this char
+    pub fn line_comment(mut self, c: char) -> Scanner<'a> {
+        self.line_comment = Some(c);
+        self
+    }
+    
 
     pub fn scan_error(&self, msg: &str, cause: Option<&Error>) -> ScanError {
        ScanError{
@@ -387,25 +399,50 @@ impl<'a> Scanner<'a> {
         Token::Error(self.scan_error(msg,cause))
     }
 
+    fn check_line_comment(&mut self) -> bool {
+        if let Some(lc) = self.line_comment {
+            if self.ch == lc {
+                self.skip_until(|c| c=='\n');
+                return true;
+            }
+        }
+        return false;
+
+    }
+
     /// skip any whitespace characters - return false if we're at the end.
     pub fn skip_whitespace(&mut self) -> bool {
-        if self.ch.is_whitespace() {
-            if self.ch == '\n' {
-                 self.lineno += 1;
-            }
-            while let Some(c) = self.iter.next() {
-                if c == '\n' {
-                    self.lineno += 1;
+        loop {
+            self.check_line_comment();
+            if self.ch.is_whitespace() {
+                if self.ch == '\n' {
+                     self.lineno += 1;
                 }
-                if ! c.is_whitespace() {
-                    self.ch = c;
-                    return true;
+                while let Some(c) = self.iter.next() {
+                    if c == '\n' {
+                        self.lineno += 1;
+                    }
+                    if ! c.is_whitespace() {
+                        self.ch = c;
+                        if self.check_line_comment() {
+                            continue;
+                        } else {
+                            return true;
+                        }
+                    }
                 }
+                // run of chars!
+                self.ch = '\0';
+                break;
+            } else {
+                break;
             }
-            // run of chars!
-            self.ch = '\0';
         }
-        if self.ch == '\0' {false} else {true}
+        if self.ch == '\0' {
+            false
+        } else {
+            true
+        }
     }
 
     /// look ahead at the next character
@@ -817,5 +854,16 @@ mod tests {
         assert_eq!(c.unwrap(),&[10.0,1.5,20.0,30.1]);
     }
 
+    #[test]
+    fn line_comments() {
+        let text = "
+            one  # some comment
+            20
+        ";
+        let mut scan = Scanner::new(text)
+            .line_comment('#');
+        assert_eq!(scan.get_iden(),Ok("one".into()));
+        assert_eq!(scan.get_number(),Ok(20.0));
+    }
 
 }

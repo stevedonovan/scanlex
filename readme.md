@@ -159,4 +159,6 @@ existing rules are too strict - e.g "2d" is fine in `no_float` mode, but
 an error in the default mode. [chrono-english](https://github.com/stevedonovan/chrono-english)
 uses this mode to parse date expressions.
 
+With `line_comment` you provide a character; after this character, the rest of the current line
+will be ignored.
 
