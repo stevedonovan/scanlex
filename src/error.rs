@@ -22,14 +22,10 @@ impl ScanError {
     }
 }
 
-impl Error for ScanError {
-    fn description(&self) -> &str {
-        &self.details
-    }
-}
+impl Error for ScanError {}
 
 impl From<io::Error> for ScanError {
     fn from(err: io::Error) -> ScanError {
-        ScanError::new(err.description())
+        ScanError::new(&err.to_string())
     }
 }

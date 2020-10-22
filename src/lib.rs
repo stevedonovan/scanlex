@@ -115,7 +115,7 @@ impl<'a> Scanner<'a> {
        ScanError{
            details: format!("{}{}", msg,
                 match cause {
-                    Some(c) => format!(": caused by {}",c.description()),
+                    Some(c) => format!(": caused by {}",c),
                     None => "".into()
                 }
             ),
@@ -128,7 +128,7 @@ impl<'a> Scanner<'a> {
         err
     }
 
-    fn token_error(&self, msg: &str, cause: Option<&Error>) -> Token {
+    fn token_error(&self, msg: &str, cause: Option<&dyn Error>) -> Token {
         Token::Error(self.scan_error(msg,cause))
     }
 
@@ -425,6 +425,34 @@ impl<'a> Scanner<'a> {
             }
         }
         Ok(())
+    }
+
+    /// grab 'balanced' text between some open and close chars
+    pub fn grab_brackets(&mut self, pair: &str) -> Result<String,ScanError> {
+        let mut chars = pair.chars();
+        let open = chars.next().expect("provide open bracket");
+        let close = chars.next().expect("provide close bracket");
+        self.skip_whitespace();
+        let mut s = String::new();
+        if self.ch != '\0' {
+            s.push(self.ch);
+        }        
+        let mut level = 1;
+        while let Some(c) = self.iter.next() {
+            if c == open {
+                level += 1;
+            } else
+            if c == close {
+                level -= 1;
+            }
+            s.push(c);
+            if level == 0 {
+                self.nextch();
+                return Ok(s);
+            }
+        }
+        Err(self.scan_error("expect close bracket",None))
+
     }
 
 }
