@@ -288,7 +288,7 @@ impl<'a> Scanner<'a> {
             self.nextch();  // skip end quote
             Str(s)
         } else
-        if self.ch.is_alphabetic() {
+        if self.ch.is_alphabetic() || self.ch == '_' {
             let s = self.grab_while(|c| c.is_alphanumeric() || c == '_');
             Iden(s)
         } else {

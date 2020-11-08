@@ -1,6 +1,6 @@
 [package]
 name = "scanlex"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["steve donovan <steve.j.donovan@gmail.com>"]
 
 description = "a simple lexical scanner for parsing text into tokens"
