@@ -5,6 +5,6 @@ fn main() {
     let text = std::env::args().skip(1).next().unwrap_or(def.to_string());
     let scan = scanlex::Scanner::new(&text);
     for t in scan {
-        println!("{:?}",t);
-    }   
+        println!("{:?}", t);
+    }
 }

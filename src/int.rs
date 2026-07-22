@@ -27,8 +27,7 @@ macro_rules! impl_int {
                 n as Self::Type
             }
         }
-    }
-
+    };
 }
 impl_int!(i8);
 impl_int!(i16);
@@ -39,4 +38,3 @@ impl_int!(u8);
 impl_int!(u16);
 impl_int!(u32);
 impl_int!(u64);
-

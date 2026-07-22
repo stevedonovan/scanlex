@@ -14,6 +14,6 @@ fn main() {
     let mut iter = ScanLines::new(&f);
     while let Some(s) = iter.next() {
         let mut s = s.expect("cannot read line");
-        println!("{:?}",s.get());
+        println!("{:?}", s.get());
     }
 }

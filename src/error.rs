@@ -1,9 +1,8 @@
-use std::{fmt,io};
 use std::error::Error;
+use std::{fmt, io};
 
 /// a scanner error type
-#[derive(Debug)]
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub struct ScanError {
     pub details: String,
     pub lineno: u32,
@@ -11,14 +10,17 @@ pub struct ScanError {
 
 impl fmt::Display for ScanError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,"line {}: {}",self.lineno,self.details)
+        write!(f, "line {}: {}", self.lineno, self.details)
     }
 }
 
 impl ScanError {
     /// create a new error
     pub fn new(msg: &str) -> ScanError {
-        ScanError{details: msg.into(), lineno: 1}
+        ScanError {
+            details: msg.into(),
+            lineno: 1,
+        }
     }
 }
 
