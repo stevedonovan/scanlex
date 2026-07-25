@@ -18,46 +18,45 @@ indicate a badly formed token.
 This lexical scanner makes some
 assumptions, such as a number may not be directly followed
 by a letter, etc. No attempt is made in this version to decode C-style
-escape codes in strings.  All whitespace is ignored. It's intended
+escape codes in strings. All whitespace is ignored. It's intended
 for processing generic structured data, rather than code.
 
 For example, the string "hello 'dolly' * 42" will be broken into four tokens:
 
-  - an _identifier_ 'hello'
-  - a quoted string 'dolly'
-  - a character '*'
-  - and a number 42
-
+- an _identifier_ 'hello'
+- a quoted string 'dolly'
+- a character '*'
+- and a number 42
 
 ```rust
 extern crate scanlex;
-use scanlex::{Scanner,Token};
+use scanlex::{Scanner, Token};
 
 let mut scan = Scanner::new("hello 'dolly' * 42");
-assert_eq!(scan.get(),Token::Iden("hello".into()));
-assert_eq!(scan.get(),Token::Str("dolly".into()));
-assert_eq!(scan.get(),Token::Char('*'));
-assert_eq!(scan.get(),Token::Int(10));
-assert_eq!(scan.get(),Token::End);
+assert_eq!(scan.get(), Token::Iden("hello".into()));
+assert_eq!(scan.get(), Token::Str("dolly".into()));
+assert_eq!(scan.get(), Token::Char('*'));
+assert_eq!(scan.get(), Token::Int(10));
+assert_eq!(scan.get(), Token::End);
 ```
+
 To extract the values, use code like this:
 
 ```rust
-let greeting = scan.get_iden()?;
-let person = scan.get_string()?;
-let op = scan.get_char()?;
+let greeting = scan.get_iden() ?;
+let person = scan.get_string() ?;
+let op = scan.get_char() ?;
 let answer = scan.get_integer(); // i64
 ```
 
-
-`Scanner` implements `Iterator`.  If you just wanted to extract the words from
+`Scanner` implements `Iterator`. If you just wanted to extract the words from
 a string, then filtering with `as_iden` will do the trick, since it returns
 `Option<String>`.
 
 ```rust
 let s = Scanner::new("bonzo 42 dog (cat)");
-let v: Vec<_> = s.filter_map(|t| t.as_iden()).collect();
-assert_eq!(v,&["bonzo","dog","cat"]);
+let v: Vec<_ > = s.filter_map( | t| t.as_iden()).collect();
+assert_eq!(v, &["bonzo", "dog", "cat"]);
 ```
 
 Using `as_number` instead you can use this strategy to extract all the numbers out of a
@@ -70,10 +69,10 @@ Usually it's important _not_ to ignore structure. Say we have input strings that
 look like this "(WORD) = NUMBER":
 
 ```rust
-	scan.skip_chars("(")?;
-	let word = scan.get_iden()?;
-	scan.skip_chars(")=")?;
-	let num = scan.get_number()?;
+    scan.skip_chars("(") ?;
+let word = scan.get_iden() ?;
+scan.skip_chars(")=") ?;
+let num = scan.get_number() ?;
 ```
 
 _Any_ of these calls may fail!
@@ -83,50 +82,47 @@ source. The `scanline.rs` example shows how to use `ScanLines` to accomplish thi
 
 ```rust
     let f = File::open("scanline.rs").expect("cannot open scanline.rs");
-    let mut iter = ScanLines::new(&f);
-    while let Some(s) = iter.next() {
-        let mut s = s.expect("cannot read line");
-        // show the first token of each line
-        println!("{:?}",s.get());
-    }
+let mut iter = ScanLines::new( & f);
+while let Some(s) = iter.next() {
+let mut s = s.expect("cannot read line");
+// show the first token of each line
+println ! ("{:?}", s.get());
+}
 ```
 
 A more serious example (taken from the tests) is parsing JSON:
 
 ```rust
 type JsonArray = Vec<Box<Value>>;
-type JsonObject = HashMap<String,Box<Value>>;
+type JsonObject = HashMap<String, Box<Value>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-   Str(String),
-   Num(f64),
-   Bool(bool),
-   Arr(JsonArray),
-   Obj(JsonObject),
-   Null
+    Str(String),
+    Num(f64),
+    Bool(bool),
+    Arr(JsonArray),
+    Obj(JsonObject),
+    Null
 }
 
-fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
+fn scan_json(scan: &mut Scanner) -> Result<Value, ScanError> {
     use Value::*;
     match scan.get() {
         Token::Str(s) => Ok(Str(s)),
         Token::Num(x) => Ok(Num(x)),
         Token::Int(n) => Ok(Num(n as f64)),
-        Token::End => Err(scan.scan_error("unexpected end of input",None)),
+        Token::End => Err(scan.scan_error("unexpected end of input", None)),
         Token::Error(e) => Err(e),
         Token::Iden(s) =>
-            if s == "null"    {Ok(Null)}
-            else if s == "true" {Ok(Bool(true))}
-            else if s == "false" {Ok(Bool(false))}
-            else {Err(scan.scan_error(&format!("unknown identifier '{}'",s),None))},
+            if s == "null" { Ok(Null) } else if s == "true" { Ok(Bool(true)) } else if s == "false" { Ok(Bool(false)) } else { Err(scan.scan_error(&format!("unknown identifier '{}'", s), None)) },
         Token::Char(c) =>
             if c == '[' {
                 let mut ja = Vec::new();
                 let mut ch = c;
                 while ch != ']' {
                     let o = scan_json(scan)?;
-                    ch = scan.get_ch_matching(&[',',']'])?;
+                    ch = scan.get_ch_matching(&[',', ']'])?;
                     ja.push(Box::new(o));
                 }
                 Ok(Arr(ja))
@@ -138,12 +134,12 @@ fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
                     let key = scan.get_string()?;
                     scan.get_ch_matching(&[':'])?;
                     let o = scan_json(scan)?;
-                    ch = scan.get_ch_matching(&[',','}'])?;
-                    jo.insert(key,Box::new(o));
+                    ch = scan.get_ch_matching(&[',', '}'])?;
+                    jo.insert(key, Box::new(o));
                 }
                 Ok(Obj(jo))
             } else {
-                Err(scan.scan_error(&format!("bad char '{}'",c),None))
+                Err(scan.scan_error(&format!("bad char '{}'", c), None))
             }
     }
 }
@@ -153,12 +149,19 @@ fn scan_json(scan: &mut Scanner) -> Result<Value,ScanError> {
 
 ## Options
 
-With `no_float` you get a barebones parser that does not recognize floats, 
-just integers, strings, chars and identifiers. This is useful if the 
+As of 0.2.0, the irritating "letter follows" error with letters after numbers no longer
+happens.
+
+With `no_float` you get a barebones parser that does not recognize floats,
+just integers, strings, chars and identifiers. This is useful if the
 existing rules are too strict - e.g "2d" is fine in `no_float` mode, but
 an error in the default mode. [chrono-english](https://github.com/stevedonovan/chrono-english)
 uses this mode to parse date expressions.
 
 With `line_comment` you provide a character; after this character, the rest of the current line
 will be ignored.
+
+With `iden_no_digits` identifiers will not contain digits, so "10h20" parses as
+`Int(10),Iden("h"),Int(20)`
+
 

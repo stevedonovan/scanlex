@@ -1,5 +1,5 @@
-use error::ScanError;
-use int::Int;
+use crate::error::ScanError;
+use crate::int::Int;
 
 /// Represents a token returned by `Scanner::get`
 #[derive(Debug, PartialEq)]
