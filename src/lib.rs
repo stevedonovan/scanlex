@@ -5,7 +5,7 @@
 //! or by iterating over the scanner.
 //!
 //! They represent floats (stored as f64), integers (as i64), characters, identifiers,
-//! or single or double quoted strings. There is also `Token::Error` to
+//! or single or double-quoted strings. There is also `Token::Error` to
 //! indicate a badly formed token.  This lexical scanner makes some
 //! sensible assumptions, such as a number may not be directly followed
 //! by a letter, etc. No attempt is made in this version to decode C-style
@@ -47,10 +47,12 @@ pub use token::Token;
 
 /// a struct for lexical scanning of a string
 pub struct Scanner<'a> {
-    iter: ::std::str::Chars<'a>,
+    text: &'a str,
+    iter: std::str::Chars<'a>,
     ch: char,
     pub lineno: u32,
     no_float: bool,
+    iden_no_digits: bool,
     line_comment: Option<char>,
 }
 
@@ -88,14 +90,13 @@ impl<'a> Scanner<'a> {
         let mut iter = s.chars();
         let mch = iter.next();
         Scanner {
-            iter: iter,
-            ch: match mch {
-                Some(c) => c,
-                None => '\0',
-            },
-            lineno: lineno,
+            iter,
+            ch: mch.unwrap_or_else(|| '\0'),
+            lineno,
             no_float: false,
+            iden_no_digits: false,
             line_comment: None,
+            text: s,
         }
     }
 
@@ -107,13 +108,27 @@ impl<'a> Scanner<'a> {
         self
     }
 
+    /// this scanner does not see digits as part of an identifier
+    ///
+    /// "10h20" is tokenized as Int(10),Char('h'),Int(20)
+    pub fn iden_no_digits(mut self) -> Scanner<'a> {
+        self.iden_no_digits = true;
+        self
+    }
+
     /// ignore everything in a line after this char
     pub fn line_comment(mut self, c: char) -> Scanner<'a> {
         self.line_comment = Some(c);
         self
     }
 
+    /// The unused slice after the scanner position
+    pub fn rest(&self) -> &str {
+        self.iter.as_str()
+    }
+
     pub fn scan_error(&self, msg: &str, cause: Option<&dyn Error>) -> ScanError {
+        let rest = self.rest();
         ScanError {
             details: format!(
                 "{}{}",
@@ -124,11 +139,13 @@ impl<'a> Scanner<'a> {
                 }
             ),
             lineno: self.lineno,
+            colno: self.text.find(rest).unwrap() as u32,
         }
     }
 
     fn update_lineno(&self, mut err: ScanError) -> ScanError {
         err.lineno = self.lineno;
+        err.colno = self.text.find(self.rest()).unwrap() as u32;
         err
     }
 
@@ -143,7 +160,7 @@ impl<'a> Scanner<'a> {
                 return true;
             }
         }
-        return false;
+        false
     }
 
     /// skip any whitespace characters - return false if we're at the end.
@@ -189,10 +206,7 @@ impl<'a> Scanner<'a> {
     /// get the next character
     pub fn nextch(&mut self) -> char {
         let old_ch = self.ch;
-        self.ch = match self.iter.next() {
-            Some(c) => c,
-            None => '\0',
-        };
+        self.ch = self.iter.next().unwrap_or_else(|| '\0');
         old_ch
     }
 
@@ -273,24 +287,17 @@ impl<'a> Scanner<'a> {
                         self.take_digits_into(&mut s);
                     }
                 }
-                return if self.ch.is_alphabetic() {
-                    self.token_error("bad floating-point number: letter follows", None)
-                } else {
-                    match f64::from_str(&s) {
-                        Ok(x) => Num(x),
-                        Err(e) => self
-                            .token_error(&format!("bad floating-point number {:?}", s), Some(&e)),
+                match f64::from_str(&s) {
+                    Ok(x) => Num(x),
+                    Err(e) => {
+                        self.token_error(&format!("bad floating-point number {:?}", s), Some(&e))
                     }
-                };
+                }
             } else {
-                return if !self.no_float && self.ch.is_alphabetic() {
-                    self.token_error("bad integer: letter follows", None)
-                } else {
-                    match i64::from_str(&s) {
-                        Ok(x) => Int(x),
-                        Err(e) => self.token_error(&format!("bad integer {:?}", s), Some(&e)),
-                    }
-                };
+                match i64::from_str(&s) {
+                    Ok(x) => Int(x),
+                    Err(e) => self.token_error(&format!("bad integer {:?}", s), Some(&e)),
+                }
             }
         } else if self.ch == '\'' || self.ch == '\"' {
             let endquote = self.ch;
@@ -300,7 +307,10 @@ impl<'a> Scanner<'a> {
             self.nextch(); // skip end quote
             Str(s)
         } else if self.ch.is_alphabetic() || self.ch == '_' {
-            let s = self.grab_while(|c| c.is_alphanumeric() || c == '_');
+            let iden_no_digits = self.iden_no_digits;
+            let s = self.grab_while(|c|
+                if iden_no_digits  { c.is_alphabetic() } else { c.is_alphanumeric() } || c == '_'
+            );
             Iden(s)
         } else {
             Char(self.nextch())
@@ -559,20 +569,22 @@ mod tests {
         assert_eq!(scan.get_string().unwrap(), "hello");
         assert_eq!(scan.get_number().unwrap(), 42.0);
         assert_eq!(scan.get_ch_matching(&['*']).unwrap(), '*');
-        assert_eq!(
-            scan.get_ch_matching(&[',', ':']).err().unwrap(),
-            ScanError::new("expected one of ',',':', got /")
-        );
+        let mut err = scan.get_ch_matching(&[',', ':']).err().unwrap();
+        err.colno = 1;
+        assert_eq!(err, ScanError::new("expected one of ',',':', got /"));
         assert_eq!(scan.get(), Int(-10));
-        assert_eq!(
-            scan.get(),
-            Error(ScanError::new("bad integer: letter follows"))
-        );
+        assert_eq!(scan.get(), Int(24));
         assert_eq!(scan.get(), Iden("B".to_string()));
         assert_eq!(scan.get(), Num(2000000.0));
         assert_eq!(scan.get(), Int(255));
         assert_eq!(scan.get(), Char('-'));
         assert_eq!(scan.get(), Str("yay".to_string()));
+
+        let mut scan = Scanner::new("20h02side2.5").iden_no_digits();
+        assert_eq!(scan.get(), Int(20));
+        assert_eq!(scan.get(), Iden("h".to_string()));
+        assert_eq!(scan.get(), Int(2));
+        assert_eq!(scan.get(), Iden("side".to_string()));
     }
 
     fn try_scan_err() -> Result<(), ScanError> {

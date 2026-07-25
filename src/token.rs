@@ -21,9 +21,15 @@ pub enum Token {
 }
 
 fn type_error<T>(t: Token, expected: &str) -> Result<T, ScanError> {
+    let error_text = if let Token::Error(e) = t {
+        e.details
+    } else {
+        format!("{:?}", t)
+    };
     Err(ScanError {
-        details: format!("{} expected, got {:?}", expected, t),
+        details: format!("{expected} expected, got: {error_text}"),
         lineno: 1,
+        colno: 1,
     })
 }
 
@@ -31,6 +37,7 @@ fn int_error<T>(msg: &str, tname: &str) -> Result<T, ScanError> {
     Err(ScanError {
         details: format!("integer {} for {}", msg, tname),
         lineno: 1,
+        colno: 1,
     })
 }
 

@@ -6,11 +6,12 @@ use std::{fmt, io};
 pub struct ScanError {
     pub details: String,
     pub lineno: u32,
+    pub colno: u32,
 }
 
 impl fmt::Display for ScanError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "line {}: {}", self.lineno, self.details)
+        write!(f, "line {}:{} {}", self.lineno, self.colno, self.details)
     }
 }
 
@@ -20,6 +21,7 @@ impl ScanError {
         ScanError {
             details: msg.into(),
             lineno: 1,
+            colno: 1,
         }
     }
 }
